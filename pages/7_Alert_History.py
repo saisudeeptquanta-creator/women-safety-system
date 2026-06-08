@@ -2,6 +2,7 @@
 import os
 import streamlit as st
 import pandas as pd
+from streamlit_autorefresh import st_autorefresh
 
 from auth import require_login, current_user
 from database import get_database
@@ -17,6 +18,10 @@ sidebar_user_box()
 user = current_user()
 db = get_database()
 page_header("Alert History", "Your past emergency alerts", icon="📜")
+
+# Live mode so status changes (e.g. admin resolving) appear in real time
+if st.toggle("🟢 Live updates", value=True):
+    st_autorefresh(interval=5000, key="history_live_refresh")
 
 alerts = db.get_user_alerts(user["uid"])
 if not alerts:

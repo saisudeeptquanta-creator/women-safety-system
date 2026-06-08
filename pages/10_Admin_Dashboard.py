@@ -2,6 +2,7 @@
 import streamlit as st
 import pandas as pd
 from streamlit_folium import st_folium
+from streamlit_autorefresh import st_autorefresh
 
 from auth import require_admin
 from database import get_database
@@ -17,14 +18,27 @@ sidebar_user_box()
 db = get_database()
 page_header("Admin Monitoring", "Real-time emergency oversight", icon="🛰️")
 
-# Auto-refresh control
-col_a, col_b = st.columns([1, 4])
-if col_a.button("🔄 Refresh live data"):
-    st.rerun()
-col_b.caption(f"Backend: {db.status()} — live alert feed")
+# --- Real-time auto-refresh controls --------------------------------------
+col_a, col_b, col_c = st.columns([1.2, 1.2, 3])
+live = col_a.toggle("🟢 Live mode", value=True,
+                    help="Auto-refresh the alert feed every few seconds")
+interval = col_b.selectbox("Refresh", [3, 5, 10, 30], index=1,
+                           format_func=lambda s: f"every {s}s")
+if live:
+    st_autorefresh(interval=interval * 1000, key="admin_live_refresh")
+col_c.caption(f"Backend: {db.status()} — "
+              f"{'🔴 LIVE' if live else 'paused'} alert feed")
 
 users = db.all("Users")
 alerts = db.get_all_alerts()
+
+# Real-time pop notification when a brand-new alert arrives
+_prev = st.session_state.get("admin_last_count", 0)
+if len(alerts) > _prev and _prev != 0:
+    newest = alerts[0][1]
+    st.toast(f"🚨 NEW ALERT: {newest.get('user_name')} · "
+             f"{newest.get('risk_level')}", icon="🚨")
+st.session_state["admin_last_count"] = len(alerts)
 
 total_alerts = len(alerts)
 active = sum(1 for _, a in alerts if a.get("status") == "Active")

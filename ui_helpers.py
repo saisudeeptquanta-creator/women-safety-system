@@ -8,6 +8,7 @@ component with manual lat/lon fallback).
 
 import os
 import streamlit as st
+import streamlit.components.v1 as components
 
 ASSETS = os.path.join(os.path.dirname(__file__), "assets")
 
@@ -100,30 +101,46 @@ def location_input(default_lat=17.3850, default_lon=78.4867, key="loc"):
     Reusable location capture widget.
 
     Renders the browser-GPS component (streamlit-geolocation) directly so a
-    single click reads the device's real coordinates. Manual latitude /
-    longitude entry is always available as a fallback. Returns (lat, lon).
+    single click reads the device's real coordinates AND writes them straight
+    into the latitude/longitude fields. Manual entry/override always works.
+    Returns (lat, lon).
+
+    Implementation note: the number_input widgets are bound to session_state
+    keys ({key}_lat_in / {key}_lon_in). To programmatically update them from
+    the GPS reading we must write to those SAME keys *before* the widgets are
+    created and then rerun — otherwise Streamlit keeps the old widget value.
     """
+    lat_k, lon_k = f"{key}_lat_in", f"{key}_lon_in"
+
+    # Initialise widget state once
+    if lat_k not in st.session_state:
+        st.session_state[lat_k] = float(default_lat)
+        st.session_state[lon_k] = float(default_lon)
+
     st.caption("📍 Capture your location")
 
     # --- Browser GPS component (renders its own clickable location icon) ---
     gps = _read_browser_location(key)
     if gps:
-        st.session_state[f"{key}_lat"] = gps[0]
-        st.session_state[f"{key}_lon"] = gps[1]
-        st.success(f"📡 Browser GPS locked: {gps[0]:.5f}, {gps[1]:.5f}")
+        new_lat, new_lon = round(gps[0], 6), round(gps[1], 6)
+        applied = st.session_state.get(f"{key}_gps_applied")
+        # Only write + rerun when the reading actually changed (prevents loops)
+        if applied != (new_lat, new_lon):
+            st.session_state[lat_k] = new_lat
+            st.session_state[lon_k] = new_lon
+            st.session_state[f"{key}_gps_applied"] = (new_lat, new_lon)
+            st.toast(f"📡 GPS locked: {new_lat:.5f}, {new_lon:.5f}", icon="📍")
+            st.rerun()
+        st.success(f"📡 Live GPS active: {new_lat:.5f}, {new_lon:.5f}")
 
-    lat = float(st.session_state.get(f"{key}_lat", default_lat))
-    lon = float(st.session_state.get(f"{key}_lon", default_lon))
-
-    # --- Manual entry / override (kept in sync with the GPS reading) -------
+    # --- Editable fields (now reflect the GPS reading) --------------------
     c1, c2 = st.columns(2)
     with c1:
-        lat = st.number_input("Latitude", value=lat, format="%.6f",
-                              key=f"{key}_lat_in")
+        lat = st.number_input("Latitude", format="%.6f", key=lat_k)
     with c2:
-        lon = st.number_input("Longitude", value=lon, format="%.6f",
-                              key=f"{key}_lon_in")
+        lon = st.number_input("Longitude", format="%.6f", key=lon_k)
 
+    # Mirror into convenience keys used elsewhere
     st.session_state[f"{key}_lat"] = lat
     st.session_state[f"{key}_lon"] = lon
     return lat, lon
@@ -150,3 +167,76 @@ def _read_browser_location(key):
     if loc and loc.get("latitude") is not None and loc.get("longitude") is not None:
         return float(loc["latitude"]), float(loc["longitude"])
     return None
+
+
+# --------------------------------------------------------------------------- #
+# Real-time browser alert: vibration + alarm sound + desktop notification
+# --------------------------------------------------------------------------- #
+def fire_browser_alert(title="🚨 SOS TRIGGERED", message="Emergency alert sent!"):
+    """
+    Fire an immediate, real-time alert on the user's own device:
+      * navigator.vibrate()  -> phone vibration (mobile browsers)
+      * Web Audio beep siren -> audible alarm (no file needed)
+      * Notification API      -> desktop/mobile push-style notification
+    Injected as a one-shot HTML/JS component so it runs the moment the
+    SOS succeeds.
+    """
+    safe_title = title.replace('"', "'")
+    safe_msg = message.replace('"', "'")
+    components.html(
+        f"""
+        <script>
+        (function() {{
+            // 1) Vibrate (mobile) — pattern: buzz, pause, buzz...
+            try {{
+                if (navigator.vibrate) {{
+                    navigator.vibrate([400, 150, 400, 150, 600]);
+                }}
+            }} catch (e) {{}}
+
+            // 2) Audible siren via Web Audio API (no audio file needed)
+            try {{
+                const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                let t = ctx.currentTime;
+                for (let i = 0; i < 4; i++) {{
+                    const o = ctx.createOscillator();
+                    const g = ctx.createGain();
+                    o.type = "sine";
+                    o.frequency.setValueAtTime(900, t);
+                    o.frequency.linearRampToValueAtTime(600, t + 0.35);
+                    g.gain.setValueAtTime(0.001, t);
+                    g.gain.exponentialRampToValueAtTime(0.5, t + 0.05);
+                    g.gain.exponentialRampToValueAtTime(0.001, t + 0.4);
+                    o.connect(g); g.connect(ctx.destination);
+                    o.start(t); o.stop(t + 0.4);
+                    t += 0.5;
+                }}
+            }} catch (e) {{}}
+
+            // 3) Desktop / mobile notification
+            try {{
+                function notify() {{
+                    new Notification("{safe_title}", {{
+                        body: "{safe_msg}",
+                        icon: "https://cdn-icons-png.flaticon.com/512/564/564619.png"
+                    }});
+                }}
+                if (window.Notification) {{
+                    if (Notification.permission === "granted") {{
+                        notify();
+                    }} else if (Notification.permission !== "denied") {{
+                        Notification.requestPermission().then(function(p) {{
+                            if (p === "granted") notify();
+                        }});
+                    }}
+                }}
+            }} catch (e) {{}}
+        }})();
+        </script>
+        <div style="font-family:sans-serif;padding:10px 14px;border-radius:10px;
+             background:#ffebee;color:#b71c1c;font-weight:700;border-left:5px solid #d32f2f;">
+            {safe_title} — {safe_msg}
+        </div>
+        """,
+        height=70,
+    )

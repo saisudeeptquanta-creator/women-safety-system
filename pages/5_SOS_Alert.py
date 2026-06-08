@@ -6,6 +6,7 @@ from auth import require_login, current_user
 from database import get_database
 from ui_helpers import (
     load_css, page_header, sidebar_user_box, location_input, risk_badge,
+    fire_browser_alert,
 )
 import alert_service
 import report_generator
@@ -63,7 +64,14 @@ if trigger or (force and st.session_state.get("force_clicked")):
         pred = result["prediction"]
 
         st.success(result["message"])
-        # Play siren if present
+
+        # 🔴 REAL-TIME device alert: vibration + siren sound + notification
+        fire_browser_alert(
+            title="🚨 SOS TRIGGERED",
+            message=f"{pred['level']} · {alert['address'][:40]} · contacts notified",
+        )
+
+        # Also play the mp3 siren if the asset is present
         siren = os.path.join(os.path.dirname(os.path.dirname(__file__)),
                              "assets", "siren.mp3")
         if os.path.exists(siren):
