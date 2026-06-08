@@ -21,6 +21,7 @@ from database import get_database
 import map_service
 import ml_model
 import email_service
+import notification_service
 
 # Minimum seconds between two SOS alerts from the same user
 SOS_COOLDOWN_SECONDS = 60
@@ -174,12 +175,15 @@ def trigger_sos(user, lat, lon, battery_level=80, is_moving=1, force=False):
         },
     )
 
-    # Notify trusted contacts
+    # Notify trusted contacts by EMAIL (in-app / mailbox)
     contacts = db.get_contacts(user_id)
     notifications = email_service.notify_contacts(alert, contacts)
 
-    # Update status to Sent / Active
-    new_status = "Sent" if notifications else "Active"
+    # Push to the PHONE via out-of-app channels (Telegram / SMS / Call).
+    # These reach the device even when the browser/app is fully closed.
+    phone_pushes = notification_service.dispatch_to_phone(alert, user, contacts)
+
+    # Update status to Active
     db.update("Alerts", alert_id, {"status": "Active"})
     alert["status"] = "Active"
 
@@ -189,6 +193,7 @@ def trigger_sos(user, lat, lon, battery_level=80, is_moving=1, force=False):
         "alert": alert,
         "prediction": prediction,
         "notifications": notifications,
+        "phone_pushes": phone_pushes,
         "recommendations": ml_model.get_recommendations(prediction["level"]),
         "message": "🚨 SOS alert created and contacts notified.",
     }

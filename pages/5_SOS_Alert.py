@@ -106,7 +106,20 @@ if st.session_state.get("last_alert"):
     for r in result["recommendations"]:
         st.markdown(f"- {r}")
 
-    st.markdown("#### 📨 Contacts notified")
+    st.markdown("#### 📲 Phone alerts (delivered even if the app is closed)")
+    pushes = result.get("phone_pushes") or []
+    if pushes:
+        for p in pushes:
+            icon = "✅" if p["ok"] else "⚠️"
+            st.write(f"{icon} **{p['to']}** — {p['message']}")
+    else:
+        st.info("No background phone channel configured yet. Set up free "
+                "Telegram alerts on the Emergency Contacts page so your phone "
+                "is notified with the browser closed.")
+        st.page_link("pages/4_Emergency_Contacts.py",
+                     label="📲 Set up phone alerts")
+
+    st.markdown("#### 📨 Email notifications")
     if result["notifications"]:
         for n in result["notifications"]:
             icon = "✅" if n["ok"] else "📭"

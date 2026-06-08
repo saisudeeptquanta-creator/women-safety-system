@@ -177,6 +177,45 @@ Without this, contact notifications are **simulated** and still shown in the UI.
 
 ---
 
+## 📲 Phone alerts when the app is closed (important)
+
+The in-page siren/vibration/popups only run **while the browser tab is open** —
+that is a hard browser rule. To be notified on your phone **with the browser /
+app fully closed**, the alert must travel through a channel your phone's OS
+listens to in the background. The system supports:
+
+| Channel | Cost | Behaviour with app CLOSED |
+|---------|------|----------------------------|
+| **Telegram bot** ✅ recommended | **Free** | Push notification **+ sound** on your phone |
+| **Twilio SMS** | Free trial | Text message to any phone |
+| **Twilio Voice call** | Free trial | Phone **rings loudly** + speaks the alert |
+| Email | Free | Email lands in your mailbox (with app sound) |
+
+### Set up free Telegram alerts (≈2 minutes)
+1. In Telegram, open **@BotFather** → send `/newbot` → follow prompts → copy the
+   **bot token**.
+2. Put the token in your secrets:
+   ```toml
+   [telegram]
+   bot_token = "123456789:ABC...xyz"
+   ```
+3. Open your new bot in Telegram and tap **Start**.
+4. Get your numeric **chat ID** from **@userinfobot**, then in the app go to
+   **Emergency Contacts → "My Telegram chat ID"**, paste it, **Save**, and hit
+   **"Send test alert to my phone now"**.
+5. For each trusted contact: they tap **Start** on your bot, get *their* chat ID
+   from @userinfobot, and you add it when creating the contact.
+
+Now an SOS pushes to every phone via Telegram (and SMS/call if Twilio is set),
+**even when nobody has the app open.**
+
+### Optional: real ringing call (closest to a "loud siren" on a closed phone)
+Add a Twilio trial account's credentials under `[twilio]` in secrets (see
+`.streamlit/secrets.toml.example`). High/Critical alerts then place an actual
+phone **call** that rings and speaks the emergency.
+
+---
+
 ## 🧪 Testing
 
 ```powershell
