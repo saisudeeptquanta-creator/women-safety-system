@@ -22,8 +22,8 @@ geopy>=2.4
 python-dotenv>=1.0
 Pillow>=10.3
 
-# Optional: browser GPS capture
-# streamlit-geolocation>=0.0.10
+# Browser GPS capture (one-click real device location)
+streamlit-geolocation>=0.0.10
 
 # Recommended Python: 3.11 – 3.13. On Python 3.14 (very new) some wheels
 # may still be building; if install fails, use a 3.12/3.13 virtualenv.

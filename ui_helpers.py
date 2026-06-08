@@ -99,50 +99,54 @@ def location_input(default_lat=17.3850, default_lon=78.4867, key="loc"):
     """
     Reusable location capture widget.
 
-    Tries the browser geolocation via streamlit-geolocation if installed,
-    otherwise offers manual latitude/longitude entry with sensible
-    defaults (Hyderabad city centre).  Returns (lat, lon).
+    Renders the browser-GPS component (streamlit-geolocation) directly so a
+    single click reads the device's real coordinates. Manual latitude /
+    longitude entry is always available as a fallback. Returns (lat, lon).
     """
-    lat = st.session_state.get(f"{key}_lat", default_lat)
-    lon = st.session_state.get(f"{key}_lon", default_lon)
-
     st.caption("📍 Capture your location")
-    cols = st.columns([1, 1, 1])
 
-    with cols[0]:
-        lat = st.number_input("Latitude", value=float(lat), format="%.6f",
+    # --- Browser GPS component (renders its own clickable location icon) ---
+    gps = _read_browser_location(key)
+    if gps:
+        st.session_state[f"{key}_lat"] = gps[0]
+        st.session_state[f"{key}_lon"] = gps[1]
+        st.success(f"📡 Browser GPS locked: {gps[0]:.5f}, {gps[1]:.5f}")
+
+    lat = float(st.session_state.get(f"{key}_lat", default_lat))
+    lon = float(st.session_state.get(f"{key}_lon", default_lon))
+
+    # --- Manual entry / override (kept in sync with the GPS reading) -------
+    c1, c2 = st.columns(2)
+    with c1:
+        lat = st.number_input("Latitude", value=lat, format="%.6f",
                               key=f"{key}_lat_in")
-    with cols[1]:
-        lon = st.number_input("Longitude", value=float(lon), format="%.6f",
+    with c2:
+        lon = st.number_input("Longitude", value=lon, format="%.6f",
                               key=f"{key}_lon_in")
-    with cols[2]:
-        st.write("")
-        st.write("")
-        if st.button("🔄 Use browser GPS", key=f"{key}_gps"):
-            _try_browser_location(key)
-
-    # If a browser location was captured, prefer it
-    if st.session_state.get(f"{key}_gps_lat"):
-        lat = st.session_state[f"{key}_gps_lat"]
-        lon = st.session_state[f"{key}_gps_lon"]
-        st.success(f"Browser location: {lat:.5f}, {lon:.5f}")
 
     st.session_state[f"{key}_lat"] = lat
     st.session_state[f"{key}_lon"] = lon
     return lat, lon
 
 
-def _try_browser_location(key):
-    """Attempt to read browser GPS via the optional streamlit-geolocation."""
+def _read_browser_location(key):
+    """
+    Render the streamlit-geolocation component and return (lat, lon) if the
+    user has granted access. Returns None when unavailable or not yet shared.
+    Click the location 📍 icon and allow the browser permission prompt.
+    """
     try:
         from streamlit_geolocation import streamlit_geolocation
-
-        loc = streamlit_geolocation()
-        if loc and loc.get("latitude"):
-            st.session_state[f"{key}_gps_lat"] = loc["latitude"]
-            st.session_state[f"{key}_gps_lon"] = loc["longitude"]
     except Exception:
         st.info(
-            "Browser GPS component not installed — enter coordinates "
-            "manually. (pip install streamlit-geolocation to enable.)"
+            "Browser GPS component not installed — enter coordinates manually. "
+            "Run `pip install streamlit-geolocation` (already in requirements) "
+            "and restart the app to enable one-click GPS."
         )
+        return None
+
+    st.caption("Tap the location icon and allow access to use real GPS:")
+    loc = streamlit_geolocation()
+    if loc and loc.get("latitude") is not None and loc.get("longitude") is not None:
+        return float(loc["latitude"]), float(loc["longitude"])
+    return None
