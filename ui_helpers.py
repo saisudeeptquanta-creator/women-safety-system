@@ -183,8 +183,7 @@ def fire_browser_alert(title="🚨 SOS TRIGGERED", message="Emergency alert sent
     """
     safe_title = title.replace('"', "'")
     safe_msg = message.replace('"', "'")
-    components.html(
-        f"""
+    html = f"""
         <script>
         (function() {{
             // 1) Vibrate (mobile) — pattern: buzz, pause, buzz...
@@ -237,6 +236,19 @@ def fire_browser_alert(title="🚨 SOS TRIGGERED", message="Emergency alert sent
              background:#ffebee;color:#b71c1c;font-weight:700;border-left:5px solid #d32f2f;">
             {safe_title} — {safe_msg}
         </div>
-        """,
-        height=70,
-    )
+        """
+    _render_html(html, height=70)
+
+
+def _render_html(html, height=70):
+    """
+    Render an inline HTML/JS snippet in an iframe.
+
+    Prefers the modern ``st.iframe`` (which embeds a raw HTML string via
+    srcdoc and runs its scripts) and falls back to the deprecated
+    ``components.html`` on older Streamlit versions.
+    """
+    if hasattr(st, "iframe"):
+        st.iframe(html, height=height)
+    else:  # Streamlit < 1.58 fallback
+        components.html(html, height=height)
