@@ -170,74 +170,157 @@ def _read_browser_location(key):
 
 
 # --------------------------------------------------------------------------- #
-# Real-time browser alert: vibration + alarm sound + desktop notification
+# Real-time EMERGENCY ALARM:
+#   * Continuous, loud, wailing two-tone siren (loops until stopped)
+#   * Repeating phone vibration
+#   * Repeating desktop/mobile notification popups (stay on screen)
+#   * Flashing full-width banner with ACTIVATE / STOP controls
 # --------------------------------------------------------------------------- #
+# The siren markup/JS is kept as a token template (not an f-string) to avoid
+# brace-escaping problems with the large amount of inline JavaScript.
+_ALARM_TEMPLATE = r"""
+<style>
+  @keyframes sosflash { 0%{background:#d32f2f} 50%{background:#6a0000} 100%{background:#d32f2f} }
+  .sos-wrap{font-family:'Segoe UI',sans-serif;color:#fff;border-radius:16px;
+            padding:18px 16px;text-align:center;animation:sosflash .7s infinite;
+            box-shadow:0 8px 26px rgba(211,47,47,.45);}
+  .sos-title{font-size:24px;font-weight:900;letter-spacing:.5px;}
+  .sos-msg{font-size:15px;margin:6px 0 12px;opacity:.95;}
+  .sos-btn{font-size:17px;font-weight:800;border:none;border-radius:12px;
+           padding:13px 22px;margin:5px;cursor:pointer;}
+  #sosArm{background:#ffffff;color:#b71c1c;}
+  #sosStop{background:#111;color:#fff;}
+  #sosStatus{margin-top:8px;font-size:13px;min-height:16px;}
+</style>
+<div class="sos-wrap">
+  <div class="sos-title">🚨 EMERGENCY SOS ACTIVE 🚨</div>
+  <div class="sos-msg">__MESSAGE__</div>
+  <button id="sosArm" class="sos-btn">🔊 ACTIVATE LOUD SIREN</button>
+  <button id="sosStop" class="sos-btn">🛑 STOP ALARM</button>
+  <div id="sosStatus">Starting alarm…</div>
+</div>
+<script>
+(function() {
+  var ctx=null, osc=null, master=null;
+  var sirenInt=null, vibInt=null, notifInt=null, high=true, running=false;
+
+  function sweep(){
+    if(!ctx||!osc) return;
+    var now=ctx.currentTime;
+    try{ osc.frequency.cancelScheduledValues(now); }catch(e){}
+    if(high){ osc.frequency.setValueAtTime(740, now);
+              osc.frequency.linearRampToValueAtTime(1500, now+0.55); }
+    else    { osc.frequency.setValueAtTime(1500, now);
+              osc.frequency.linearRampToValueAtTime(740, now+0.55); }
+    high=!high;
+  }
+
+  function setStatus(){
+    var el=document.getElementById('sosStatus'); if(!el) return;
+    if(ctx && ctx.state==='running' && running){
+      el.innerText='🔊 Siren wailing — tap STOP when safe.';
+    } else {
+      el.innerText='⚠️ Tap "🔊 ACTIVATE LOUD SIREN" to start the alarm sound.';
+    }
+  }
+
+  function ensureCtx(){
+    if(ctx) return;
+    ctx = new (window.AudioContext||window.webkitAudioContext)();
+    master = ctx.createGain(); master.gain.value=0.0001;
+    master.connect(ctx.destination);
+    osc = ctx.createOscillator(); osc.type='sawtooth';
+    osc.connect(master); osc.start();
+  }
+
+  function startAudio(){
+    try{
+      ensureCtx();
+      // Browsers often start the context suspended (autoplay policy):
+      // resuming requires a user gesture, which the ACTIVATE/STOP taps provide.
+      if(ctx.state==='suspended'){ ctx.resume().then(setStatus); }
+      if(!running){
+        master.gain.exponentialRampToValueAtTime(0.85, ctx.currentTime+0.15); // LOUD
+        sweep(); sirenInt=setInterval(sweep, 550);
+        running=true;
+      }
+      setStatus();
+    }catch(e){ setStatus(); }
+  }
+
+  function startVibration(){
+    if(vibInt) return;
+    function buzz(){ try{ if(navigator.vibrate) navigator.vibrate([700,250,700]); }catch(e){} }
+    buzz(); vibInt=setInterval(buzz, 1700);
+  }
+
+  function fireNotif(){
+    try{
+      if(window.Notification && Notification.permission==='granted'){
+        new Notification("🚨 SOS EMERGENCY", {
+          body:"__MESSAGE__",
+          requireInteraction:true, renotify:true, tag:'sos-alert',
+          icon:"https://cdn-icons-png.flaticon.com/512/564/564619.png"
+        });
+      }
+    }catch(e){}
+  }
+  function startNotifications(){
+    if(notifInt) return;
+    function go(){ fireNotif(); }
+    if(window.Notification){
+      if(Notification.permission==='granted'){ go(); }
+      else if(Notification.permission!=='denied'){
+        Notification.requestPermission().then(function(p){ if(p==='granted') go(); });
+      }
+    }
+    notifInt=setInterval(fireNotif, 5000); // repeating real-time popups
+  }
+
+  function startAll(){ startAudio(); startVibration(); startNotifications(); }
+
+  function stopAll(){
+    try{ if(sirenInt) clearInterval(sirenInt);
+         if(master&&ctx){ master.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime+0.2); }
+         if(osc) osc.stop(ctx.currentTime+0.3); }catch(e){}
+    if(vibInt){ clearInterval(vibInt); vibInt=null; }
+    if(notifInt){ clearInterval(notifInt); notifInt=null; }
+    try{ if(navigator.vibrate) navigator.vibrate(0); }catch(e){}
+    running=false;
+    document.getElementById('sosStatus').innerText='✅ Alarm stopped.';
+  }
+
+  document.getElementById('sosArm').addEventListener('click', startAll);
+  document.getElementById('sosStop').addEventListener('click', stopAll);
+  // Any tap inside the frame also arms/resumes audio (autoplay restrictions)
+  document.body.addEventListener('click', function(){ startAudio(); }, {once:false});
+
+  // Attempt to auto-start immediately (works when the browser allows it)
+  startVibration(); startNotifications(); startAudio();
+})();
+</script>
+"""
+
+
+def render_sos_alarm(message="Emergency alert sent — help is being notified."):
+    """
+    Render the persistent, loud, continuous emergency alarm. Call this on
+    every run while ``st.session_state['sos_alarm_active']`` is True so the
+    siren survives Streamlit reruns. Use ``stop_sos_alarm()`` to clear it.
+    """
+    safe_msg = message.replace('"', "'").replace("<", "").replace(">", "")
+    html = _ALARM_TEMPLATE.replace("__MESSAGE__", safe_msg)
+    _render_html(html, height=210)
+
+
+def stop_sos_alarm():
+    """Authoritative stop: clears the alarm flag so the iframe is removed."""
+    st.session_state["sos_alarm_active"] = False
+
+
+# Backwards-compatible one-shot helper (kept so existing imports keep working)
 def fire_browser_alert(title="🚨 SOS TRIGGERED", message="Emergency alert sent!"):
-    """
-    Fire an immediate, real-time alert on the user's own device:
-      * navigator.vibrate()  -> phone vibration (mobile browsers)
-      * Web Audio beep siren -> audible alarm (no file needed)
-      * Notification API      -> desktop/mobile push-style notification
-    Injected as a one-shot HTML/JS component so it runs the moment the
-    SOS succeeds.
-    """
-    safe_title = title.replace('"', "'")
-    safe_msg = message.replace('"', "'")
-    html = f"""
-        <script>
-        (function() {{
-            // 1) Vibrate (mobile) — pattern: buzz, pause, buzz...
-            try {{
-                if (navigator.vibrate) {{
-                    navigator.vibrate([400, 150, 400, 150, 600]);
-                }}
-            }} catch (e) {{}}
-
-            // 2) Audible siren via Web Audio API (no audio file needed)
-            try {{
-                const ctx = new (window.AudioContext || window.webkitAudioContext)();
-                let t = ctx.currentTime;
-                for (let i = 0; i < 4; i++) {{
-                    const o = ctx.createOscillator();
-                    const g = ctx.createGain();
-                    o.type = "sine";
-                    o.frequency.setValueAtTime(900, t);
-                    o.frequency.linearRampToValueAtTime(600, t + 0.35);
-                    g.gain.setValueAtTime(0.001, t);
-                    g.gain.exponentialRampToValueAtTime(0.5, t + 0.05);
-                    g.gain.exponentialRampToValueAtTime(0.001, t + 0.4);
-                    o.connect(g); g.connect(ctx.destination);
-                    o.start(t); o.stop(t + 0.4);
-                    t += 0.5;
-                }}
-            }} catch (e) {{}}
-
-            // 3) Desktop / mobile notification
-            try {{
-                function notify() {{
-                    new Notification("{safe_title}", {{
-                        body: "{safe_msg}",
-                        icon: "https://cdn-icons-png.flaticon.com/512/564/564619.png"
-                    }});
-                }}
-                if (window.Notification) {{
-                    if (Notification.permission === "granted") {{
-                        notify();
-                    }} else if (Notification.permission !== "denied") {{
-                        Notification.requestPermission().then(function(p) {{
-                            if (p === "granted") notify();
-                        }});
-                    }}
-                }}
-            }} catch (e) {{}}
-        }})();
-        </script>
-        <div style="font-family:sans-serif;padding:10px 14px;border-radius:10px;
-             background:#ffebee;color:#b71c1c;font-weight:700;border-left:5px solid #d32f2f;">
-            {safe_title} — {safe_msg}
-        </div>
-        """
-    _render_html(html, height=70)
+    render_sos_alarm(message)
 
 
 def _render_html(html, height=70):
