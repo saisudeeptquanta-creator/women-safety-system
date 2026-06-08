@@ -1,0 +1,26 @@
+# --- Secrets (NEVER commit) ---
+.streamlit/secrets.toml
+serviceAccountKey.json
+*.serviceAccount.json
+.env
+
+# --- Generated / runtime artifacts ---
+models/*.pkl
+reports/*.pdf
+data/local_store/
+data/sample_alerts.csv
+data/sample_users.csv
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# --- OS / IDE ---
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

@@ -1,0 +1,17 @@
+# Streamlit configuration — theme + server settings
+# (Safe to commit. Real secrets go in secrets.toml, which is gitignored.)
+
+[theme]
+primaryColor = "#7b2ff7"
+backgroundColor = "#ffffff"
+secondaryBackgroundColor = "#f6f1ff"
+textColor = "#222222"
+font = "sans serif"
+
+[server]
+headless = true
+enableCORS = false
+enableXsrfProtection = true
+
+[browser]
+gatherUsageStats = false
